@@ -1,0 +1,22 @@
+{
+  "name": "papois-vs-macacos",
+  "version": "1.0.0",
+  "description": "Captura la Bandera multijugador para celular: Papois vs Macacos",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "node tools/build.js",
+    "start": "node tools/build.js && node server/index.js",
+    "dev": "node tools/build.js --watch & node server/index.js",
+    "test": "node tools/simtest.js",
+    "standalone": "node tools/build.js --standalone"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.2",
+    "three": "^0.186.1",
+    "ws": "^8.22.0"
+  }
+}

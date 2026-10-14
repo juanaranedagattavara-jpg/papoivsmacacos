@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1a2236">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="description" content="Captura la bandera multijugador para celular: Papois vs Macacos. Roba la bandera, rescata a tu equipo y muta.">
+<title>Papois vs Macacos</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- Carga -->
+<div id="boot" class="screen show">
+  <div class="boot-logo"><span class="t-papois">PAPOIS</span><span class="vs">vs</span><span class="t-macacos">MACACOS</span></div>
+  <div class="boot-bar"><i id="bootFill"></i></div>
+  <p id="bootMsg">Preparando el laboratorio…</p>
+</div>
+
+<!-- Menú principal -->
+<div id="menu" class="screen">
+  <div class="menu-top">
+    <div class="profile-chip" data-go="custom">
+      <div class="lvl" id="menuLvl">1</div>
+      <div><b id="menuName">Jugador</b><div class="xpbar"><i id="menuXp"></i></div></div>
+    </div>
+    <button class="icon-btn" data-go="settings" aria-label="Ajustes">⚙️</button>
+  </div>
+  <div class="title">
+    <h1><span class="t-papois">PAPOIS</span> <span class="vs">vs</span> <span class="t-macacos">MACACOS</span></h1>
+    <p class="subtitle">Captura la bandera · Multijugador</p>
+  </div>
+  <div class="menu-actions">
+    <input id="nameInput" maxlength="14" placeholder="Tu nombre" autocomplete="off" enterkeyhint="done">
+    <button class="btn big primary" data-go="bots">🎮 Jugar vs Bots</button>
+    <button class="btn big online" data-go="online">👫 Jugar con amigos</button>
+    <div class="row">
+      <button class="btn" data-go="custom">🎩 Personaje</button>
+      <button class="btn" data-go="howto">📖 Cómo jugar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Configurar partida contra bots -->
+<div id="bots" class="screen panel-screen">
+  <div class="panel">
+    <button class="back" data-go="menu">‹</button>
+    <h2>Partida contra bots</h2>
+    <div class="team-pick" id="botsTeam">
+      <button class="team-card t0" data-team="0"><b>PAPOIS</b><small>Rayo congelador · Pedos · Bono de grupo</small></button>
+      <button class="team-card t1" data-team="1"><b>MACACOS</b><small>Coco bomba · Salto de liana · Nadan mejor</small></button>
+    </div>
+    <div class="opts">
+      <label>Dificultad <div class="seg" data-opt="difficulty"><button data-v="0">Fácil</button><button data-v="1">Normal</button><button data-v="2">Difícil</button></div></label>
+      <label>Jugadores por equipo <div class="seg" data-opt="teamSize"><button data-v="2">2v2</button><button data-v="3">3v3</button><button data-v="4">4v4</button><button data-v="5">5v5</button></div></label>
+      <label>Duración <div class="seg" data-opt="duration"><button data-v="180">3 min</button><button data-v="300">5 min</button><button data-v="420">7 min</button></div></label>
+      <label>Capturas para ganar <div class="seg" data-opt="capsToWin"><button data-v="1">1</button><button data-v="3">3</button><button data-v="5">5</button></div></label>
+    </div>
+    <div class="sticky"><button class="btn big primary" id="botsStart">¡A jugar!</button></div>
+  </div>
+</div>
+
+<!-- Online -->
+<div id="online" class="screen panel-screen">
+  <div class="panel">
+    <button class="back" data-go="menu">‹</button>
+    <h2>Jugar con amigos</h2>
+    <p class="hint">Crea una sala y comparte el código. Los equipos se completan con bots si faltan jugadores.</p>
+    <button class="btn big primary" id="btnCreate">➕ Crear sala</button>
+    <div class="join-row">
+      <input id="codeInput" maxlength="4" placeholder="CÓDIGO" autocomplete="off" autocapitalize="characters">
+      <button class="btn" id="btnJoin">Unirse</button>
+    </div>
+    <button class="btn" id="btnQuick">⚡ Partida rápida pública</button>
+    <p class="hint small" id="onlineNote"></p>
+  </div>
+</div>
+
+<!-- Lobby -->
+<div id="lobby" class="screen panel-screen">
+  <div class="panel wide">
+    <button class="back" id="lobbyLeave">‹</button>
+    <div class="lobby-head">
+      <div>
+        <small>CÓDIGO DE SALA</small>
+        <div class="code" id="lobbyCode">----</div>
+      </div>
+      <button class="btn" id="btnShare">📲 Invitar</button>
+    </div>
+    <div class="lobby-teams">
+      <div class="lteam t0"><h3>PAPOIS</h3><ul id="lt0"></ul><button class="btn small" data-join-team="0">Unirme a Papois</button></div>
+      <div class="lteam t1"><h3>MACACOS</h3><ul id="lt1"></ul><button class="btn small" data-join-team="1">Unirme a Macacos</button></div>
+    </div>
+    <div class="opts" id="lobbyOpts">
+      <label>Por equipo <div class="seg" data-lopt="teamSize"><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button><button data-v="5">5</button></div></label>
+      <label>Duración <div class="seg" data-lopt="duration"><button data-v="180">3m</button><button data-v="300">5m</button><button data-v="420">7m</button></div></label>
+      <label>Capturas <div class="seg" data-lopt="capsToWin"><button data-v="1">1</button><button data-v="3">3</button><button data-v="5">5</button></div></label>
+      <label>Bots <div class="seg" data-lopt="difficulty"><button data-v="0">Fácil</button><button data-v="1">Normal</button><button data-v="2">Difícil</button></div></label>
+      <label>Rellenar con bots <div class="seg" data-lopt="bots"><button data-v="1">Sí</button><button data-v="0">No</button></div></label>
+      <label>Regla clásica <div class="seg" data-lopt="classic"><button data-v="0">No</button><button data-v="1">Sí</button></div></label>
+    </div>
+    <p class="hint small" id="classicHint">Regla clásica: solo puedes anotar si tu propia bandera está en tu base.</p>
+    <div class="sticky">
+      <button class="btn big primary" id="lobbyStart">¡Empezar!</button>
+      <p class="hint" id="lobbyWait">Esperando a que el anfitrión empiece…</p>
+    </div>
+  </div>
+</div>
+
+<!-- Personaje -->
+<div id="custom" class="screen panel-screen custom-screen">
+  <div class="panel side">
+    <button class="back" data-go="menu">‹</button>
+    <h2>Tu personaje</h2>
+    <div class="level-box"><div class="lvl big" id="cLvl">1</div><div class="grow"><b id="cName">Jugador</b><div class="xpbar"><i id="cXp"></i></div><small id="cXpTxt"></small></div></div>
+    <div class="team-pick small" id="cTeam">
+      <button class="team-card t0" data-team="0"><b>Papoi</b></button>
+      <button class="team-card t1" data-team="1"><b>Macaco</b></button>
+    </div>
+    <h4>Gorros</h4>
+    <div class="grid" id="hatGrid"></div>
+    <div id="eyesBox"><h4>Ojos</h4><div class="seg" id="eyesSeg"><button data-v="2">Dos ojos</button><button data-v="1">Un ojo</button></div></div>
+    <div id="furBox"><h4>Pelaje</h4><div class="grid" id="furGrid"></div></div>
+    <div class="stats-mini" id="cStats"></div>
+  </div>
+</div>
+
+<!-- Cómo jugar -->
+<div id="howto" class="screen panel-screen">
+  <div class="panel wide scroll">
+    <button class="back" data-go="menu">‹</button>
+    <h2>Cómo jugar</h2>
+    <div class="rules">
+      <div class="rule"><span>🚩</span><p><b>Objetivo:</b> roba la bandera del otro equipo y llévala a tu base. Gana quien llegue primero a las capturas pedidas o tenga más al final.</p></div>
+      <div class="rule"><span>🏠</span><p><b>Territorios:</b> el río divide el mapa. En <b>tu lado</b> estás a salvo y puedes <b>atrapar</b> a los intrusos tocándolos. En el lado enemigo, te pueden atrapar a ti.</p></div>
+      <div class="rule"><span>⛓️</span><p><b>Jaula:</b> si te atrapan vas a la jaula enemiga. Un compañero que toque la jaula libera a <b>todos</b>. Si nadie llega, sales solo en 8 s.</p></div>
+      <div class="rule"><span>🏃</span><p><b>Portador:</b> al robar la bandera tienes escudo y adrenalina unos segundos; los congelamientos solo te frenan. Si te atrapan, la bandera cae: tu equipo la puede recoger y el rival devolverla tocándola.</p></div>
+      <div class="rule"><span>⭕</span><p><b>Zona protegida:</b> no puedes pararte sobre tu propia bandera (círculo de rayas). ¡Defiende desde afuera!</p></div>
+      <div class="rule"><span>🧊</span><p><b>Papois:</b> Rayo Congelador (congela), Pistola de Pedos (empuja, frena y te propulsa) y bono de velocidad cuando van juntos.</p></div>
+      <div class="rule"><span>🥥</span><p><b>Macacos:</b> Coco Bomba (aturde), Salto de Liana (esquiva y deja una cáscara de plátano) y nadan más rápido.</p></div>
+      <div class="rule"><span>☣️</span><p><b>Mutación:</b> carga la barra (jugando o tomando <b>Suero</b>) y transfórmate en <b>Papoi Morado</b> o <b>Macaco Salvaje</b>: más grande, rápido, inmune y derribas a cualquiera. En tu territorio (o al portador) los mandas a la jaula. <b>Contagia</b> a tus aliados tocándolos. Los mutantes no pueden llevar la bandera.</p></div>
+      <div class="rule"><span>🚨</span><p><b>¡Brote!</b> En el último minuto todos reciben carga de mutación y aparecen más sueros.</p></div>
+      <div class="rule"><span>🎮</span><p><b>Controles:</b> joystick a la izquierda. Toca el botón de ataque para apuntar solo, o arrástralo para apuntar tú. En PC: WASD, clic o espacio, Shift (habilidad), Q (mutar), 1-8 (mensajes).</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- Ajustes -->
+<div id="settings" class="screen panel-screen">
+  <div class="panel">
+    <button class="back" data-go="menu">‹</button>
+    <h2>Ajustes</h2>
+    <div class="opts">
+      <label>Efectos de sonido <div class="seg" data-pref="sfx"><button data-v="1">Sí</button><button data-v="0">No</button></div></label>
+      <label>Música <div class="seg" data-pref="music"><button data-v="1">Sí</button><button data-v="0">No</button></div></label>
+      <label>Vibración <div class="seg" data-pref="vibrate"><button data-v="1">Sí</button><button data-v="0">No</button></div></label>
+      <label>Voces de mensajes <div class="seg" data-pref="voices"><button data-v="1">Sí</button><button data-v="0">No</button></div></label>
+      <label>Consejos en partida <div class="seg" data-pref="tips"><button data-v="1">Sí</button><button data-v="0">No</button></div></label>
+      <label>Calidad gráfica <div class="seg" data-pref="quality"><button data-v="0">Baja</button><button data-v="1">Media</button><button data-v="2">Alta</button></div></label>
+    </div>
+    <p class="hint small">Cambiar la calidad recarga el juego. Usa “Baja” si tu celular se calienta.</p>
+    <button class="btn" id="btnFullscreen">⛶ Pantalla completa</button>
+  </div>
+</div>
+
+<!-- Resultados -->
+<div id="results" class="screen panel-screen">
+  <div class="panel wide scroll">
+    <div class="res-banner" id="resBanner">¡VICTORIA!</div>
+    <div class="res-score" id="resScore"></div>
+    <div class="res-mvp" id="resMvp"></div>
+    <div class="res-cols">
+      <div class="res-table" id="resTable"></div>
+      <div class="res-xp">
+        <div class="level-box"><div class="lvl big" id="resLvl">1</div><div class="grow"><div class="xpbar big"><i id="resXpBar"></i></div><small id="resXpTxt"></small></div></div>
+        <ul id="resXpLines"></ul>
+        <div id="resUnlocks"></div>
+      </div>
+    </div>
+    <div class="row center sticky">
+      <button class="btn big primary" id="resAgain">Jugar otra vez</button>
+      <button class="btn" id="resShare">📲 Compartir</button>
+      <button class="btn" id="resMenu">Menú</button>
+    </div>
+  </div>
+</div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="joyZone"></div>
+  <div id="joy"><div id="joyKnob"></div></div>
+  <div class="hud-top">
+    <button class="icon-btn small" id="btnPause" aria-label="Menú">☰</button>
+    <div class="scorebox">
+      <div class="sc t0"><span class="flagst" id="fs0"></span><b>PAPOIS</b><i id="sc0">0</i></div>
+      <div class="timer" id="timer">5:00</div>
+      <div class="sc t1"><i id="sc1">0</i><b>MACACOS</b><span class="flagst" id="fs1"></span></div>
+    </div>
+    <canvas id="minimap" width="256" height="144"></canvas>
+  </div>
+  <div id="ping"></div>
+  <div id="feed"></div>
+  <div id="banner"></div>
+  <div id="territory"></div>
+  <div id="labels"></div>
+  <div id="floaters"></div>
+  <div id="arrows"></div>
+  <div id="vignette"></div>
+  <div id="frost"></div>
+  <div id="tip"></div>
+  <div class="actions">
+    <button id="btnEmote" class="act small" aria-label="Mensajes">💬</button>
+    <button id="btnUlt" class="act ult" aria-label="Mutar"><svg viewBox="0 0 100 100" class="ring"><circle cx="50" cy="50" r="45" class="bg"/><circle cx="50" cy="50" r="45" class="fg" id="ultRing"/></svg><span class="ico">☣️</span><em id="ultPct">0%</em></button>
+    <button id="btnAbility" class="act ability" aria-label="Habilidad"><span class="ico" id="abiIco">💨</span><span class="cd" id="abiCd"></span></button>
+    <button id="btnAttack" class="act attack" aria-label="Atacar"><span class="ico" id="atkIco">❄️</span><span class="cd" id="atkCd"></span></button>
+  </div>
+  <div id="countdown"></div>
+  <div id="jailbox" class="hidden"><b>¡Te atraparon!</b><span id="jailTxt"></span><button class="btn small" id="btnHelp">📣 ¡Libérenme!</button></div>
+  <div id="emoteWheel" class="hidden"></div>
+  <div id="pauseMenu" class="hidden">
+    <div class="panel">
+      <h2>Pausa</h2>
+      <p id="pauseInfo" class="hint"></p>
+      <button class="btn big primary" id="btnResume">Continuar</button>
+      <button class="btn" id="btnQuit">Salir de la partida</button>
+    </div>
+  </div>
+</div>
+
+<div id="rotate" class="hidden"><div>📱↻</div><p>Gira tu celular para jugar mejor</p><button class="btn small" id="rotateOk">Jugar así</button></div>
+<div id="toast"></div>
+
+<script type="module" src="game.js"></script>
+</body>
+</html>

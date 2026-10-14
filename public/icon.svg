@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="110" fill="#1a2236"/>
+  <rect x="0" y="0" width="256" height="512" rx="0" fill="#ffc928"/>
+  <rect x="256" y="0" width="256" height="512" fill="#3ddc84"/>
+  <rect width="512" height="512" rx="110" fill="none" stroke="#1a2236" stroke-width="28"/>
+  <circle cx="150" cy="250" r="96" fill="#f6d13c" stroke="#1b1b1e" stroke-width="10"/>
+  <rect x="54" y="218" width="192" height="40" fill="#1b1b1e"/>
+  <circle cx="150" cy="238" r="52" fill="#c8ccd4"/>
+  <circle cx="150" cy="238" r="40" fill="#fff"/>
+  <circle cx="150" cy="240" r="18" fill="#6b3f1d"/>
+  <circle cx="150" cy="240" r="9" fill="#111"/>
+  <path d="M70 300h160v40a80 80 0 0 1-160 0z" fill="#2b5aa8"/>
+  <circle cx="362" cy="250" r="90" fill="#7a4a26"/>
+  <circle cx="276" cy="240" r="30" fill="#7a4a26"/>
+  <circle cx="448" cy="240" r="30" fill="#7a4a26"/>
+  <ellipse cx="362" cy="276" rx="62" ry="54" fill="#e3bd8f"/>
+  <circle cx="338" cy="236" r="24" fill="#e3bd8f"/>
+  <circle cx="386" cy="236" r="24" fill="#e3bd8f"/>
+  <circle cx="338" cy="238" r="10" fill="#111"/>
+  <circle cx="386" cy="238" r="10" fill="#111"/>
+  <path d="M336 296q26 22 52 0" stroke="#4a2a10" stroke-width="8" fill="none" stroke-linecap="round"/>
+  <text x="256" y="470" font-family="Arial Black, sans-serif" font-size="64" text-anchor="middle" fill="#fff" stroke="#1a2236" stroke-width="10" paint-order="stroke">VS</text>
+</svg>

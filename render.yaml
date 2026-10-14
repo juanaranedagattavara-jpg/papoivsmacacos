@@ -1,0 +1,10 @@
+# Despliegue en Render.com (plan gratis). Render detecta este archivo como "Blueprint".
+services:
+  - type: web
+    name: papois-vs-macacos
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node server/index.js
+    healthCheckPath: /health
+    autoDeploy: true
