@@ -20,6 +20,23 @@
   window.__mockRoomStats = stats;
   const later = (fn) => setTimeout(fn, LAT_MIN + Math.random() * (LAT_MAX - LAT_MIN));
   const err = (code, message) => Object.assign(new Error(message), { code, message });
+  // Claves de presence: gramática de identificador en todos los niveles (más estricto que lo mínimo)
+  const KEY = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
+  const BAD = new Set(['prototype', ...Object.getOwnPropertyNames(Object.prototype)]);
+  const badKey = (o, depth = 0) => {
+    if (depth > 8) return 'too deep';
+    if (Array.isArray(o)) { for (const v of o) { const b = badKey(v, depth + 1); if (b) return b; } return null; }
+    if (o && typeof o === 'object') {
+      for (const [k, v] of Object.entries(o)) {
+        if (!KEY.test(k) || BAD.has(k)) return 'bad key ' + k;
+        const b = badKey(v, depth + 1);
+        if (b) return b;
+      }
+    }
+    return null;
+  };
+  let blipUntil = 0; // simula una reconexión: los demás dejan de vernos un momento
+  window.__mockBlip = (ms) => { blipUntil = Date.now() + ms; bc.postMessage({ room: '*', kind: 'bye', peer: myPeer }); };
 
   function makeRoom(name) {
     const peers = new Map(); // peer -> {presence, updatedAt}
@@ -57,6 +74,7 @@
     const flush = () => {
       timer = null;
       if (!dirty || left) return;
+      if (Date.now() < blipUntil) { timer = setTimeout(flush, 50); return; }
       dirty = false;
       stats.sends++;
       const data = JSON.parse(JSON.stringify(mine));
@@ -64,7 +82,8 @@
     };
     const onMsg = (ev) => {
       const m = ev.data;
-      if (!m || m.room !== name || m.peer === myPeer || left) return;
+      if (!m || (m.room !== name && m.room !== '*') || m.peer === myPeer || left) return;
+      if (Date.now() < blipUntil) return;
       later(() => {
         if (left) return;
         if (m.kind === 'hello') {
@@ -91,6 +110,10 @@
       presence(patch) {
         stats.presenceCalls++;
         if (left) return Promise.reject(err('invalid_argument', 'left'));
+        const bk = badKey(patch || {});
+        if (bk) { stats.rejected++; stats.lastError = bk; return Promise.reject(err('invalid_argument', bk)); }
+        // como la plataforma real, se queda con el patch tal cual y lo congela
+        deepFreeze(patch);
         const next = { ...mine };
         for (const [k, v] of Object.entries(patch || {})) { if (v === null) delete next[k]; else next[k] = v; }
         const size = enc.encode(JSON.stringify(next)).length;

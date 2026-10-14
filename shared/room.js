@@ -5,9 +5,21 @@ import { BotBrain, updateTeamRoles } from './bots.js';
 
 const HATS = ['none', 'gorra', 'casco', 'fiesta', 'corona', 'vikingo', 'pirata', 'flor'];
 
+// Texto seguro para mostrar y compartir: sin caracteres de control, invisibles ni sustitutos
+// sueltos (sí conserva emojis compuestos), cortado por caracteres y no por unidades UTF-16.
+export function cleanText(s, max = 64) {
+  const out = [];
+  for (const ch of String(s ?? '').normalize('NFC')) {
+    if (/[\p{Cc}\p{Co}\p{Cs}<>]/u.test(ch)) continue;
+    if (/\p{Cf}/u.test(ch) && ch !== '\u200d') continue;
+    out.push(ch);
+    if (out.length >= max) break;
+  }
+  return out.join('').trim();
+}
+
 export function sanitizeName(n) {
-  n = String(n || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, LIMITS.nameLen);
-  return n || 'Jugador';
+  return cleanText(n, LIMITS.nameLen) || 'Jugador';
 }
 
 export function sanitizeSkin(s) {

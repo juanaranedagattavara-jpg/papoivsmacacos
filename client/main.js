@@ -4,6 +4,7 @@ import { Sound } from './audio.js';
 import { Game, escapeHtml } from './game.js';
 import { LocalConnection, NetConnection, serverUrl, onlineAvailable } from './net.js';
 import { CloudConnection } from './cloud.js';
+import { sanitizeName } from '../shared/room.js';
 import { loadProfile, saveProfile, xpForLevel, applyMatchXp, HAT_UNLOCKS, FUR_NAMES, FUR_UNLOCKS } from './profile.js';
 import { TEAMS, DEFAULT_SETTINGS, F } from '../shared/constants.js';
 
@@ -308,12 +309,18 @@ function initCloud() {
 function ensureConn() {
   if (conn && !conn.closed) return conn;
   if (CLOUD) {
-    if (!roomApi) return null;
-    conn = new CloudConnection(roomApi, profileInfo());
-    conn.onMessage((m) => dispatch(m, conn));
-    conn.onGames = (list) => { openGames = list; if (current === 'online') renderOpenGames(); };
-    conn.onClose = (msg) => {
-      if (game && game.running && game.conn === conn) {
+    if (!roomApi || roomState !== 'ready') return null;
+    const c = new CloudConnection(roomApi, profileInfo());
+    conn = c;
+    c.onMessage((m) => dispatch(m, c));
+    c.onGames = (list) => { openGames = list; if (current === 'online') renderOpenGames(); };
+    c.onBusy = (busy) => {
+      for (const id of ['btnCreate', 'btnJoin', 'btnQuick']) $(id).disabled = busy || !canPlayOnline();
+      for (const b of document.querySelectorAll('#roomList [data-code]')) b.disabled = busy;
+      if (busy) toast('Conectando con la sala…');
+    };
+    c.onClose = (msg) => {
+      if (game && game.running && game.conn === c) {
         toast(msg || 'Se cerró la sala', true);
         game.destroy();
         game = null;
@@ -325,9 +332,15 @@ function ensureConn() {
       }
       lobby = null;
     };
-    conn.send({ t: 'hello', ...profileInfo() });
-    openGames = conn.openGames();
-    return conn;
+    c.onUnavailable = () => {
+      roomState = 'unavailable';
+      if (conn === c) conn = null;
+      if (!(game && game.running && game.conn === c)) lobby = null;
+      if (current === 'online' || current === 'lobby') { show('online'); refreshOnline(); }
+    };
+    c.send({ t: 'hello', ...profileInfo() });
+    openGames = c.openGames();
+    return c;
   }
   conn = new NetConnection(serverUrl());
   conn.onMessage((m) => dispatch(m, conn));
@@ -442,8 +455,8 @@ function dispatch(m, source) {
 
 function startGame(start, source) {
   if (game && game.running) {
-    // reconexión a mitad de partida (roster actualizado)
-    if (game.conn === source) return;
+    // mismo personaje en la misma conexión: es un aviso repetido; si cambió, rehacer la vista
+    if (game.conn === source && start.you === game.meId) return;
     game.destroy();
   }
   stopMenuLoop();
@@ -537,13 +550,14 @@ function bindUi() {
     const dest = go.dataset.go;
     if ((dest === 'bots' || dest === 'online') && !profile.name) {
       const v = $('nameInput').value.trim();
-      if (v) { profile.name = v.slice(0, 14); saveProfile(profile); }
+      if (v) { profile.name = sanitizeName(v); saveProfile(profile); }
     }
     show(dest);
     if (profile.prefs.music) sound.startMusic();
   });
   $('nameInput').addEventListener('change', () => {
-    profile.name = $('nameInput').value.trim().slice(0, 14);
+    const v = $('nameInput').value.trim();
+    profile.name = v ? sanitizeName(v) : '';
     saveProfile(profile);
     refreshMenu();
     syncProfileOnline();
