@@ -19,11 +19,16 @@ let local = null; // conexión local (bots)
 let lobby = null;
 let current = 'boot';
 let menuLoop = null;
-let lastBots = { ...DEFAULT_SETTINGS, ...(safeJson(localStorage.getItem('pvm_bots')) || {}) };
+let lastBots = { ...DEFAULT_SETTINGS, ...(safeJson(sget('pvm_bots')) || {}) };
+// primeras partidas en fácil: que la primera experiencia sea ganable
+if (!sget('pvm_bots') && profile.games < 2) lastBots.difficulty = 0;
 let lastResults = null;
 let pendingJoin = null;
 
 function safeJson(s) { try { return JSON.parse(s); } catch { return null; } }
+// Acceso a almacenamiento tolerante a modo privado / sitios bloqueados
+function sget(k, session = false) { try { return (session ? sessionStorage : localStorage).getItem(k); } catch { return null; } }
+function sset(k, v, session = false) { try { (session ? sessionStorage : localStorage).setItem(k, v); } catch { /* sin almacenamiento */ } }
 
 // ------------------------------------------------------------ utilidades UI
 function show(id) {
@@ -187,8 +192,8 @@ function syncProfileOnline() {
 
 // ------------------------------------------------------------ ajustes
 function refreshSettings() {
-  for (const seg of document.querySelectorAll('[data-pref]')) {
-    const k = seg.dataset.pref;
+  for (const seg of document.querySelectorAll('[data-setting]')) {
+    const k = seg.dataset.setting;
     const v = k === 'quality' ? profile.prefs.quality : profile.prefs[k] ? 1 : 0;
     bindSeg(seg, v, (val) => {
       if (k === 'quality') {
@@ -224,7 +229,7 @@ function refreshBots() {
   }
   for (const seg of $('bots').querySelectorAll('[data-opt]')) {
     const k = seg.dataset.opt;
-    bindSeg(seg, lastBots[k], (v) => { lastBots[k] = +v; localStorage.setItem('pvm_bots', JSON.stringify(lastBots)); });
+    bindSeg(seg, lastBots[k], (v) => { lastBots[k] = +v; sset('pvm_bots', JSON.stringify(lastBots)); });
   }
 }
 
@@ -244,7 +249,7 @@ function refreshOnline() {
   const ok = onlineAvailable();
   $('onlineNote').textContent = ok
     ? 'Tip: comparte el link de invitación por WhatsApp y tus amigos entran directo a tu sala.'
-    : 'El modo online necesita el servidor del juego (ver README). En esta versión solo puedes jugar contra bots.';
+    : 'Esta versión es para jugar contra bots. El modo con amigos funciona cuando el juego corre en su servidor (ver README del proyecto).';
   for (const id of ['btnCreate', 'btnJoin', 'btnQuick']) $(id).disabled = !ok;
 }
 
@@ -272,7 +277,7 @@ function ensureConn() {
 function createRoom() {
   sound.unlock();
   const c = ensureConn();
-  const s = safeJson(localStorage.getItem('pvm_online')) || {};
+  const s = safeJson(sget('pvm_online')) || {};
   c.send({ t: 'create', team: profile.team, settings: { ...DEFAULT_SETTINGS, ...s } });
 }
 
@@ -301,7 +306,7 @@ function renderLobby() {
     bindSeg(seg, v, (val) => {
       const s = { [k]: k === 'bots' || k === 'classic' ? val === '1' : +val };
       conn.send({ t: 'settings', settings: s });
-      localStorage.setItem('pvm_online', JSON.stringify({ ...lobby.settings, ...s }));
+      sset('pvm_online', JSON.stringify({ ...lobby.settings, ...s }));
     });
   }
   $('classicHint').classList.toggle('hidden', !lobby.settings.classic);
@@ -378,7 +383,7 @@ function startGame(start, source) {
 
 function maybeRotateHint() {
   const r = $('rotate');
-  if (isTouch() && window.innerHeight > window.innerWidth && !sessionStorage.getItem('pvm_rot')) {
+  if (isTouch() && window.innerHeight > window.innerWidth && !sget('pvm_rot', true)) {
     r.classList.remove('hidden');
   }
 }
@@ -486,7 +491,7 @@ function bindUi() {
     show('menu');
   };
   $('btnFullscreen').onclick = () => fullscreen();
-  $('rotateOk').onclick = () => { $('rotate').classList.add('hidden'); sessionStorage.setItem('pvm_rot', '1'); };
+  $('rotateOk').onclick = () => { $('rotate').classList.add('hidden'); sset('pvm_rot', '1', true); };
   window.addEventListener('resize', () => {
     world?.resize();
     if (window.innerWidth > window.innerHeight) $('rotate').classList.add('hidden');

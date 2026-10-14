@@ -469,7 +469,7 @@ export class Game {
     // proyectiles (servidor + fantasmas locales)
     const ownT = serverNow + (this.conn.rtt || 0) / 2000;
     const list = [];
-    for (const a of L.pr) {
+    for (const a of L.pj) {
       const [id, kind, x, y, vx, vy, owner] = a;
       if (!this.seenProj.has(id)) {
         this.seenProj.add(id);

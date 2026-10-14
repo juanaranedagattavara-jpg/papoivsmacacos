@@ -10,7 +10,8 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const watch = args.includes('--watch');
-const standalone = args.includes('--standalone');
+const standalone = args.includes('--standalone') || args.includes('--artifact');
+const artifact = args.includes('--artifact');
 
 const common = {
   entryPoints: [path.join(root, 'client/main.js')],
@@ -33,7 +34,14 @@ if (standalone) {
     .replace('<link rel="stylesheet" href="style.css">', () => `<style>\n${css}\n</style>`)
     .replace('<script type="module" src="game.js"></script>', () => `<script>window.PVM_STANDALONE = true;</script>\n<script type="module">\n${js.replace(/<\/script/g, '<\\/script')}\n</script>`);
   fs.mkdirSync(path.join(root, 'dist'), { recursive: true });
-  const file = path.join(root, 'dist/papois-vs-macacos.html');
+  if (artifact) {
+    // Variante sin <html>/<head>/<body> para publicar como página alojada (el host agrega el esqueleto)
+    const fonts = html.match(/<link href="https:\/\/fonts[^>]*>/)[0];
+    const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>') + 8);
+    const body = html.slice(html.indexOf('<body>') + 6, html.lastIndexOf('</body>'));
+    html = `<title>Papois vs Macacos</title>\n<link rel="preconnect" href="https://fonts.googleapis.com">\n${fonts}\n${style}\n${body}`;
+  }
+  const file = path.join(root, artifact ? 'dist/artifact.html' : 'dist/papois-vs-macacos.html');
   fs.writeFileSync(file, html);
   console.log(`Standalone: ${path.relative(root, file)} (${(html.length / 1024).toFixed(0)} KB)`);
 } else if (watch) {

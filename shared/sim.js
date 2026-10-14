@@ -410,51 +410,51 @@ export class Sim {
 
   updateProjectiles() {
     const out = [];
-    for (const pr of this.projectiles) {
+    for (const pj of this.projectiles) {
       let alive = true;
       for (let s = 0; s < 2 && alive; s++) {
-        pr.x += pr.vx * DT / 2;
-        pr.y += pr.vy * DT / 2;
-        if (solidAt(pr.x, pr.y, 0.05)) {
-          this.emit('phit', r2(pr.x), r2(pr.y), pr.kind);
+        pj.x += pj.vx * DT / 2;
+        pj.y += pj.vy * DT / 2;
+        if (solidAt(pj.x, pj.y, 0.05)) {
+          this.emit('phit', r2(pj.x), r2(pj.y), pj.kind);
           alive = false;
           break;
         }
         for (const q of this.players) {
-          if (q.team === pr.team || q.state !== 0 || q.leapT > 0) continue;
-          const rr = radiusOf(q) + pr.r;
-          const dx = q.x - pr.x, dy = q.y - pr.y;
+          if (q.team === pj.team || q.state !== 0 || q.leapT > 0) continue;
+          const rr = radiusOf(q) + pj.r;
+          const dx = q.x - pj.x, dy = q.y - pj.y;
           if (dx * dx + dy * dy < rr * rr) {
             alive = false;
-            this.hitPlayer(pr, q);
+            this.hitPlayer(pj, q);
             break;
           }
         }
       }
-      pr.life -= DT;
-      if (alive && pr.life <= 0) {
-        this.emit('phit', r2(pr.x), r2(pr.y), pr.kind);
+      pj.life -= DT;
+      if (alive && pj.life <= 0) {
+        this.emit('phit', r2(pj.x), r2(pj.y), pj.kind);
         alive = false;
       }
-      if (alive) out.push(pr);
+      if (alive) out.push(pj);
     }
     this.projectiles = out;
   }
 
-  hitPlayer(pr, q) {
-    const owner = this.byId.get(pr.owner);
-    const w = WEAPONS[pr.kind];
+  hitPlayer(pj, q) {
+    const owner = this.byId.get(pj.owner);
+    const w = WEAPONS[pj.kind];
     let ok;
-    if (pr.kind === PAPOIS) {
+    if (pj.kind === PAPOIS) {
       ok = this.applyCC(q, 'freeze', w.freeze);
-      if (ok) this.emit('freeze', pr.owner, q.id);
+      if (ok) this.emit('freeze', pj.owner, q.id);
     } else {
-      const sp = len(pr.vx, pr.vy) || 1;
-      this.push(q, pr.vx / sp, pr.vy / sp, w.knock);
+      const sp = len(pj.vx, pj.vy) || 1;
+      this.push(q, pj.vx / sp, pj.vy / sp, w.knock);
       ok = this.applyCC(q, 'stun', w.stun);
-      if (ok) this.emit('stun', pr.owner, q.id);
+      if (ok) this.emit('stun', pj.owner, q.id);
     }
-    if (!ok) this.emit('immune', q.id, r2(pr.x), r2(pr.y), pr.kind);
+    if (!ok) this.emit('immune', q.id, r2(pj.x), r2(pj.y), pj.kind);
     else if (owner) {
       owner.stats.hits++;
       owner.ult = Math.min(1, owner.ult + ULT.hit);
@@ -837,7 +837,7 @@ export class Sim {
         p.id, r2(p.x), r2(p.y), r2(p.face), this.flagsOf(p), Math.round(p.ult * 100),
         r2(p.mutantT), r2(p.jailT),
       ]),
-      pr: this.projectiles.map((q) => [q.id, q.kind, r2(q.x), r2(q.y), r2(q.vx), r2(q.vy), q.owner]),
+      pj: this.projectiles.map((q) => [q.id, q.kind, r2(q.x), r2(q.y), r2(q.vx), r2(q.vy), q.owner]),
       cl: this.clouds.map((c) => [c.id, r2(c.x), r2(c.y), r2(c.r), r2(c.life / c.max)]),
       pe: this.peels.map((q) => [q.id, r2(q.x), r2(q.y)]),
       fl: this.flags.map((f) => [f.state, r2(f.x), r2(f.y), f.carrier, r2(f.dropT)]),
