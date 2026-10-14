@@ -370,3 +370,12 @@ button, input, select { font-family: inherit; font-weight: 800; }
   .team-card { padding: 8px 6px; }
   .team-card b { font-size: 18px; }
 }
+
+/* Salas abiertas (nube de Claude) */
+.room-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+.room-list h4 { margin: 4px 0 2px; }
+.room-item { display: flex; align-items: center; gap: 10px; width: 100%; border: 2px solid var(--line); background: rgba(255,255,255,0.06); color: var(--text); border-radius: 14px; padding: 8px 12px; cursor: pointer; text-align: left; min-height: 46px; }
+.room-item b { font-family: var(--font-title); font-weight: 400; font-size: 20px; letter-spacing: 3px; }
+.room-item span { flex: 1; min-width: 0; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.room-item em { font-style: normal; font-size: 13px; background: linear-gradient(#7ef0b0, #33cc77); color: #10301f; padding: 5px 10px; border-radius: 10px; }
+.room-item:focus-visible, .btn:focus-visible, .seg button:focus-visible, .team-card:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }

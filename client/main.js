@@ -3,6 +3,7 @@ import { World } from './render/world.js';
 import { Sound } from './audio.js';
 import { Game, escapeHtml } from './game.js';
 import { LocalConnection, NetConnection, serverUrl, onlineAvailable } from './net.js';
+import { CloudConnection } from './cloud.js';
 import { loadProfile, saveProfile, xpForLevel, applyMatchXp, HAT_UNLOCKS, FUR_NAMES, FUR_UNLOCKS } from './profile.js';
 import { TEAMS, DEFAULT_SETTINGS, F } from '../shared/constants.js';
 
@@ -24,6 +25,15 @@ let lastBots = { ...DEFAULT_SETTINGS, ...(safeJson(sget('pvm_bots')) || {}) };
 if (!sget('pvm_bots') && profile.games < 2) lastBots.difficulty = 0;
 let lastResults = null;
 let pendingJoin = null;
+// Nube de Claude: multijugador por la capacidad `room` del Artifact
+const CLOUD = !!window.PVM_CLOUD;
+let roomApi = null; // namespace de claude.use("room") cuando está disponible
+let roomState = CLOUD ? 'connecting' : 'off'; // connecting | ready | unavailable | off
+let openGames = [];
+
+function canPlayOnline() {
+  return CLOUD ? roomState === 'ready' : onlineAvailable();
+}
 
 function safeJson(s) { try { return JSON.parse(s); } catch { return null; } }
 // Acceso a almacenamiento tolerante a modo privado / sitios bloqueados
@@ -246,15 +256,79 @@ function startBots() {
 
 // ------------------------------------------------------------ online
 function refreshOnline() {
-  const ok = onlineAvailable();
-  $('onlineNote').textContent = ok
-    ? 'Tip: comparte el link de invitación por WhatsApp y tus amigos entran directo a tu sala.'
-    : 'Esta versión es para jugar contra bots. El modo con amigos funciona cuando el juego corre en su servidor (ver README del proyecto).';
+  const ok = canPlayOnline();
+  let note;
+  if (CLOUD) {
+    note = roomState === 'ready'
+      ? 'Juegan quienes tengan acceso a esta página en Claude: compártela con tus amigos desde el botón Compartir de Claude y pásales el código. El anfitrión debe mantener el juego abierto en pantalla.'
+      : roomState === 'connecting'
+        ? 'Conectando con la nube de Claude…'
+        : 'El modo con amigos necesita abrir esta página con tu cuenta de Claude (un link público no puede unirse a salas). Contra bots sí puedes jugar.';
+  } else {
+    note = ok
+      ? 'Tip: comparte el link de invitación por WhatsApp y tus amigos entran directo a tu sala.'
+      : 'Esta versión es para jugar contra bots. El modo con amigos funciona cuando el juego corre en su servidor (ver README del proyecto).';
+  }
+  $('onlineNote').textContent = note;
   for (const id of ['btnCreate', 'btnJoin', 'btnQuick']) $(id).disabled = !ok;
+  renderOpenGames();
+}
+
+// Salas abiertas que anuncian otros jugadores dentro de esta página de Claude
+function renderOpenGames() {
+  const box = $('roomList');
+  if (!box) return;
+  if (!CLOUD || roomState !== 'ready') { box.innerHTML = ''; box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  if (!openGames.length) {
+    box.innerHTML = '<p class="hint small">No hay salas abiertas ahora. Crea una y comparte el código.</p>';
+    return;
+  }
+  box.innerHTML = '<h4>Salas abiertas</h4>' + openGames.map((g) =>
+    `<button class="room-item" data-code="${g.code}"><b>${g.code}</b><span>${escapeHtml(g.host)} · ${g.count}/10${g.inMatch ? ' · jugando' : ''}</span><em>Unirse</em></button>`).join('');
+  for (const b of box.querySelectorAll('[data-code]')) {
+    b.onclick = () => { sound.play('click'); joinRoom(b.dataset.code); };
+  }
+}
+
+function initCloud() {
+  if (!CLOUD) return;
+  const use = window.claude && typeof window.claude.use === 'function' ? window.claude.use.bind(window.claude) : null;
+  if (!use) { roomState = 'unavailable'; return; }
+  use('room').then((api) => {
+    if (!api) { roomState = 'unavailable'; if (current === 'online') refreshOnline(); return; }
+    roomApi = api;
+    roomState = 'ready';
+    ensureConn();
+    if (current === 'online') refreshOnline();
+    if (pendingJoin && current !== 'game') { show('online'); joinRoom(pendingJoin); }
+  }).catch(() => { roomState = 'unavailable'; if (current === 'online') refreshOnline(); });
 }
 
 function ensureConn() {
   if (conn && !conn.closed) return conn;
+  if (CLOUD) {
+    if (!roomApi) return null;
+    conn = new CloudConnection(roomApi, profileInfo());
+    conn.onMessage((m) => dispatch(m, conn));
+    conn.onGames = (list) => { openGames = list; if (current === 'online') renderOpenGames(); };
+    conn.onClose = (msg) => {
+      if (game && game.running && game.conn === conn) {
+        toast(msg || 'Se cerró la sala', true);
+        game.destroy();
+        game = null;
+        setShowcase();
+        show('menu');
+      } else if (current === 'lobby') {
+        toast(msg || 'Se cerró la sala', true);
+        show('online');
+      }
+      lobby = null;
+    };
+    conn.send({ t: 'hello', ...profileInfo() });
+    openGames = conn.openGames();
+    return conn;
+  }
   conn = new NetConnection(serverUrl());
   conn.onMessage((m) => dispatch(m, conn));
   conn.onClose = () => {
@@ -277,6 +351,7 @@ function ensureConn() {
 function createRoom() {
   sound.unlock();
   const c = ensureConn();
+  if (!c) { toast('El modo con amigos no está disponible aquí', true); return; }
   const s = safeJson(sget('pvm_online')) || {};
   c.send({ t: 'create', team: profile.team, settings: { ...DEFAULT_SETTINGS, ...s } });
 }
@@ -285,7 +360,10 @@ function joinRoom(code) {
   sound.unlock();
   code = String(code || '').toUpperCase().replace(/[^A-Z]/g, '');
   if (code.length !== 4) { toast('El código tiene 4 letras', true); return; }
-  ensureConn().send({ t: 'join', code, team: profile.team });
+  const c = ensureConn();
+  if (!c) { toast('El modo con amigos no está disponible aquí', true); return; }
+  if (CLOUD) toast(`Entrando a la sala ${code}…`);
+  c.send({ t: 'join', code, team: profile.team });
 }
 
 function renderLobby() {
@@ -316,18 +394,22 @@ function renderLobby() {
 }
 
 function inviteLink() {
+  if (CLOUD) return '';
   return `${location.origin}${location.pathname}?sala=${lobby?.code || ''}`;
 }
 
 async function share(text, url) {
+  const full = url ? `${text} ${url}` : text;
+  if (!CLOUD) {
+    try {
+      if (navigator.share) { await navigator.share({ title: 'Papois vs Macacos', text, url }); return; }
+    } catch { return; }
+  }
   try {
-    if (navigator.share) { await navigator.share({ title: 'Papois vs Macacos', text, url }); return; }
-  } catch { return; }
-  try {
-    await navigator.clipboard.writeText(`${text} ${url}`);
-    toast('¡Link copiado! Pégalo en WhatsApp');
+    await navigator.clipboard.writeText(full);
+    toast(CLOUD ? '¡Copiado! Pégalo en WhatsApp junto al link de la página' : '¡Link copiado! Pégalo en WhatsApp');
   } catch {
-    toast(url);
+    toast(full);
   }
 }
 
@@ -471,10 +553,16 @@ function bindUi() {
   $('btnCreate').onclick = () => { sound.play('click'); createRoom(); };
   $('btnJoin').onclick = () => { sound.play('click'); joinRoom($('codeInput').value); };
   $('codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(e.target.value); });
-  $('btnQuick').onclick = () => { sound.play('click'); sound.unlock(); ensureConn().send({ t: 'quick' }); };
+  $('btnQuick').onclick = () => {
+    sound.play('click'); sound.unlock();
+    const c = ensureConn();
+    if (c) c.send({ t: 'quick', team: profile.team });
+  };
   $('lobbyLeave').onclick = () => { sound.play('click'); conn?.send({ t: 'leave' }); lobby = null; show('online'); };
   $('lobbyStart').onclick = () => { sound.play('click'); if (isTouch()) fullscreen(); conn?.send({ t: 'start' }); };
-  $('btnShare').onclick = () => share(`¡Únete a mi sala de Papois vs Macacos! Código: ${lobby?.code}`, inviteLink());
+  $('btnShare').onclick = () => share(CLOUD
+    ? `¡Únete a mi sala de Papois vs Macacos! Abre el juego en Claude → "Jugar con amigos" → código ${lobby?.code}`
+    : `¡Únete a mi sala de Papois vs Macacos! Código: ${lobby?.code}`, inviteLink());
   for (const b of document.querySelectorAll('[data-join-team]')) {
     b.onclick = () => { sound.play('click'); conn?.send({ t: 'team', team: +b.dataset.joinTeam }); };
   }
@@ -518,7 +606,7 @@ async function boot() {
     msg.textContent = 'Tu navegador no soporta WebGL. Prueba con Chrome o Safari actualizados.';
     return;
   }
-  window.__pvm = { get world() { return world; }, get game() { return game; } };
+  window.__pvm = { get world() { return world; }, get game() { return game; }, get conn() { return conn; } };
   await step(75, 'Despertando a los Papois y Macacos…');
   setShowcase();
   world.update(0.016, { focus: { x: 32, y: 18 }, orbit: { angle: 0, dist: 8, height: 4 }, players: [], flags: [{ state: 0 }, { state: 0 }], myBush: -1 });
@@ -526,10 +614,15 @@ async function boot() {
   await step(100, '¡Listo!');
   bindUi();
   const params = new URLSearchParams(location.search);
-  const sala = params.get('sala');
+  const hashCode = (location.hash || '').replace('#', '').toUpperCase();
+  const sala = params.get('sala') || (/^[A-Z]{4}$/.test(hashCode) ? hashCode : null);
+  initCloud();
   if (window.PVM_STANDALONE) document.body.classList.add('standalone');
   show('menu');
-  if (sala && onlineAvailable()) {
+  if (sala && CLOUD) {
+    pendingJoin = sala;
+    $('codeInput').value = sala;
+  } else if (sala && onlineAvailable()) {
     pendingJoin = sala;
     $('codeInput').value = sala.toUpperCase();
     toast(`Te invitaron a la sala ${sala.toUpperCase()}. Escribe tu nombre y toca “Jugar con amigos”.`);

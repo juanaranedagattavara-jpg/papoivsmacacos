@@ -9,7 +9,8 @@
     "start": "node tools/build.js && node server/index.js",
     "dev": "node tools/build.js --watch & node server/index.js",
     "test": "node tools/simtest.js",
-    "standalone": "node tools/build.js --standalone"
+    "standalone": "node tools/build.js --standalone",
+    "cloud": "node tools/build.js --cloud"
   },
   "engines": {
     "node": ">=18"

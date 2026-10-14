@@ -69,7 +69,15 @@ Abre `http://localhost:3000`. En la consola aparece la dirección de tu red (por
 > El plan gratis de Render "duerme" el servidor tras 15 min sin uso; la primera visita tarda ~50 s en despertar. Para eventos o muchos jugadores conviene el plan pagado (≈7 USD/mes) o un VPS.
 > También hay un `Dockerfile` para Railway, Fly.io o cualquier VPS. **Vercel/Netlify no sirven** para el multijugador porque no mantienen conexiones WebSocket.
 
-### 3) Versión de un solo archivo (solo bots, sin servidor)
+### 3) En la nube de Claude (sin servidor propio)
+El juego también está publicado como página de Claude (Artifact). Ahí se juega contra bots y **con amigos**:
+- Quien toca **Crear sala** es el anfitrión: su navegador corre el motor del juego y lo transmite por la capacidad `room` de Claude. Debe mantener el juego abierto en pantalla.
+- Los demás entran desde **Jugar con amigos** (aparece la lista de salas abiertas) o escribiendo el código.
+- Solo pueden unirse personas con acceso a la página en Claude: compártela desde el botón **Compartir** de Claude. Un link público sirve para jugar contra bots, pero no para entrar a salas.
+
+Para regenerar esa versión: `npm run cloud` (crea `dist/cloud/index.html` + `dist/cloud/game.js`).
+
+### 4) Versión de un solo archivo (solo bots, sin servidor)
 ```bash
 npm run standalone   # genera dist/papois-vs-macacos.html
 ```
@@ -87,6 +95,7 @@ shared/      Lógica compartida (corre igual en servidor y navegador)
   bots.js        IA: roles, rescates, intercepción, escolta, habilidades
   room.js        Sala: lobby, inicio, unión a mitad de partida, snapshots
 server/index.js  Servidor HTTP + WebSocket (salas por código, partida rápida)
+client/cloud.js  Multijugador en la nube de Claude (anfitrión + invitados vía `room`)
 client/          Navegador
   main.js        Menús, salas, resultados, progresión
   game.js        Predicción del jugador local + interpolación + eventos
@@ -94,7 +103,7 @@ client/          Navegador
   hud.js         Marcador, minimapa, etiquetas, avisos
   audio.js       Sonidos y música sintetizados (WebAudio)
   render/        Three.js: personajes, escenario, efectos, cámara
-tools/           build (esbuild), simulación de prueba
+tools/           build (esbuild), simulación de prueba, simulador de `room` para pruebas
 ```
 
 - **Servidor autoritativo**: el servidor decide todo (evita trampas y desincronización). El cliente **predice** tu movimiento para que responda al instante aunque haya lag, y **interpola** a los demás.

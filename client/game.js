@@ -68,7 +68,7 @@ export class Game {
     this.snaps = [];
     this.latest = null;
     this.clock = null;
-    this.interpDelay = conn.isLocal ? 0.06 : 0.13;
+    this.interpDelay = conn.interpDelay ?? (conn.isLocal ? 0.06 : 0.13);
     this.phase = PHASE.COUNTDOWN;
     this.timeLeft = this.settings.duration;
     this.score = [0, 0];

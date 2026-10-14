@@ -12,6 +12,7 @@ const args = process.argv.slice(2);
 const watch = args.includes('--watch');
 const standalone = args.includes('--standalone') || args.includes('--artifact');
 const artifact = args.includes('--artifact');
+const cloud = args.includes('--cloud');
 
 const common = {
   entryPoints: [path.join(root, 'client/main.js')],
@@ -23,7 +24,33 @@ const common = {
   logLevel: 'warning',
 };
 
-if (standalone) {
+if (cloud) {
+  // Versión para la nube de Claude: página mínima (sin atributos id en el HTML) + game.js.
+  // La interfaz se inyecta desde JS; los ids viajan como data-pvmid y se restauran al cargar.
+  const css = fs.readFileSync(path.join(root, 'public/style.css'), 'utf8');
+  const index = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
+  let body = index.slice(index.indexOf('<body>') + 6, index.indexOf('<script type="module"'));
+  body = body.replace(/<!--[\s\S]*?-->/g, '').replace(/\sid="/g, ' data-pvmid="').trim();
+  const banner = `(function(){var s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.appendChild(s);` +
+    `document.body.insertAdjacentHTML('afterbegin',${JSON.stringify(body)});` +
+    `var l=document.querySelectorAll('[data-pvmid]');for(var i=0;i<l.length;i++){l[i].setAttribute('i'+'d',l[i].getAttribute('data-pvmid'));l[i].removeAttribute('data-pvmid');}` +
+    `window.PVM_STANDALONE=true;window.PVM_CLOUD=true;})();`;
+  const out = await esbuild.build({ ...common, write: false, sourcemap: false, banner: { js: banner } });
+  const dir = path.join(root, 'dist/cloud');
+  fs.mkdirSync(dir, { recursive: true });
+  const fonts = index.match(/<link href="https:\/\/fonts[^>]*>/)[0];
+  const page = [
+    '<title>Papois vs Macacos</title>',
+    '<link rel="preconnect" href="https://fonts.googleapis.com">',
+    fonts,
+    '<style>:root{color-scheme:dark}html,body{height:100%;margin:0;background:#0f1626;color:#f4f7ff;overflow:hidden;font-family:Nunito,system-ui,sans-serif}</style>',
+    '<script type="module" src="game.js"></script>',
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(dir, 'index.html'), page);
+  fs.writeFileSync(path.join(dir, 'game.js'), out.outputFiles[0].text);
+  console.log(`Nube de Claude: dist/cloud/index.html (${page.length} B) + dist/cloud/game.js (${(out.outputFiles[0].text.length / 1024).toFixed(0)} KB)`);
+} else if (standalone) {
   const out = await esbuild.build({ ...common, write: false, sourcemap: false });
   const js = out.outputFiles[0].text;
   const css = fs.readFileSync(path.join(root, 'public/style.css'), 'utf8');
