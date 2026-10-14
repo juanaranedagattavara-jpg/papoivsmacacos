@@ -17,6 +17,7 @@ const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const HOST_TIMEOUT = 9000; // sin anfitrión tras unirse: la sala no existe
 const GRACE_MS = 5000; // ausencias breves (reconexiones) no expulsan a nadie
 const INPUT_STALE_MS = 250; // controles sin cambios por más tiempo = invitado inactivo
+const ADMIT_TIMEOUT = 60000; // anfitrión visible que no nos admite (juego en segundo plano)
 const TERMINAL = new Set(['revoked', 'not_granted', 'capability_disabled', 'capability_removed', 'transform_error']);
 const enc = new TextEncoder();
 const clone = (o) => (o == null ? o : JSON.parse(JSON.stringify(o)));
@@ -36,7 +37,7 @@ function packPlayer(p) {
   return [p.id, cleanText(p.name, LIMITS.nameLen), p.team, p.bot ? 1 : 0, p.level || 1, sk.hat || 'none', sk.eyes === 1 ? 1 : 2, sk.fur | 0];
 }
 function unpackPlayer(a) {
-  return { id: a[0], name: String(a[1] ?? ''), team: a[2] === 1 ? 1 : 0, bot: a[3] === 1, level: a[4] | 0 || 1, skin: { hat: String(a[5] || 'none'), eyes: a[6] === 1 ? 1 : 2, fur: a[7] | 0 } };
+  return { id: a[0], name: cleanText(String(a[1] ?? ''), LIMITS.nameLen) || '?', team: a[2] === 1 ? 1 : 0, bot: a[3] === 1, level: a[4] | 0 || 1, skin: { hat: String(a[5] || 'none'), eyes: a[6] === 1 ? 1 : 2, fur: a[7] | 0 } };
 }
 
 function packLobby(m) {
@@ -60,7 +61,7 @@ function unpackResults(d) {
     players: (d.pl || []).map((a) => {
       const stats = {};
       K.forEach((k, i) => { stats[k] = (a[6] && a[6][i]) | 0; });
-      return { id: a[0], name: String(a[1] ?? ''), team: a[2] === 1 ? 1 : 0, bot: a[3] === 1, level: a[4] | 0, mvp: a[5] | 0, stats, skin: {} };
+      return { id: a[0], name: cleanText(String(a[1] ?? ''), LIMITS.nameLen) || '?', team: a[2] === 1 ? 1 : 0, bot: a[3] === 1, level: a[4] | 0, mvp: a[5] | 0, stats, skin: {} };
     }),
   };
 }
@@ -94,6 +95,11 @@ export class CloudConnection {
     this.watch = null;
     this.leaving = null;
     this.interpDelay = 0.16;
+    // contadores del invitado: nunca vuelven atrás (el anfitrión recuerda el peer tras un reingreso)
+    this.tqN = 0;
+    this.emN = 0;
+    this.emIdx = 0;
+    this.inArr = [0, 0, 0, 0, 0, 0, 0, 0];
     // lobby general: anuncia y descubre salas abiertas
     this.unsubs.push(api.onPeers(() => this.onGames(this.openGames()), (e) => this.fatal(e)));
     this.unsubs.push(api.onConnection(() => {}, (e) => this.fatal(e)));
@@ -277,6 +283,11 @@ export class CloudConnection {
     });
     this.room.join('me', { ...this.profile, team });
     this.bindNamed();
+    this.hidden = false;
+    // al irse a otra app se publica la pausa de inmediato (después el navegador puede congelar la página)
+    const onVis = () => { if (gen === this.gen && this.mode === 'host' && document.hidden) { this.hidden = true; this.publish(); } };
+    document.addEventListener('visibilitychange', onVis);
+    this.gameUnsubs.push(() => document.removeEventListener('visibilitychange', onVis));
     clearInterval(this.timer);
     const STEP = 1000 / TICK_RATE;
     let acc = 0, last = performance.now();
@@ -312,10 +323,12 @@ export class CloudConnection {
         break;
       }
       case 'start':
-        // también llega a un invitado que entra a mitad de partida: sólo 'me' marca partida nueva
-        this.ss = { n: ++this.seq.ss, se: m.settings };
+        // también llega a quien entra a mitad de partida: sólo 'me' marca una partida nueva (ss.n = id de partida)
+        if (cid === 'me') {
+          this.ss = { n: ++this.seq.ss, se: m.settings };
+          this.end = null; this.events = []; this.selves = new Map();
+        }
         this.ro = { n: ++this.seq.ro, r: m.roster.map(packPlayer) };
-        if (cid === 'me') { this.end = null; this.events = []; this.selves = new Map(); }
         this.dirty = true;
         break;
       case 'roster':
@@ -339,7 +352,14 @@ export class CloudConnection {
 
   hostTick() {
     if (this.mode !== 'host' || !this.named) return;
+    const hidden = typeof document !== 'undefined' && document.hidden;
+    if (hidden !== this.hidden) { this.hidden = hidden; this.dirty = true; }
     this.readRemote();
+    if (hidden && this.room.phase === 'match') {
+      // en segundo plano el navegador frena los timers: mejor pausar que correr en cámara lenta
+      if (this.dirty) this.publish();
+      return;
+    }
     this.room.tick();
     this.tickN++;
     const inMatch = this.room.phase === 'match';
@@ -351,10 +371,12 @@ export class CloudConnection {
     try { peers = this.named.peers(); } catch { peers = []; }
     const now = performance.now();
     const present = new Set();
+    const leftNow = new Set();
     const inMatch = this.room.phase === 'match';
     for (const peer of peers) {
       if (peer.sameTab || peer.kind !== 'viewer') continue;
       const pr = peer.presence;
+      if (pr && pr.x === 1) { leftNow.add(peer.peer); continue; } // se fue a propósito
       if (!pr || pr.c !== 1) continue;
       present.add(peer.peer);
       const inArr = Array.isArray(pr.in) ? pr.in : null;
@@ -400,8 +422,11 @@ export class CloudConnection {
     // ausencias: se espera un margen antes de convertirlo en bot (reconexiones breves)
     for (const [id, st] of this.remote) {
       if (present.has(id)) continue;
-      if (!st.goneAt) { st.goneAt = now; continue; }
-      if (now - st.goneAt < GRACE_MS) continue;
+      if (!st.joined) { this.remote.delete(id); this.er.delete(id); this.dirty = true; continue; }
+      if (!leftNow.has(id)) {
+        if (!st.goneAt) { st.goneAt = now; continue; }
+        if (now - st.goneAt < GRACE_MS) continue;
+      }
       if (st.joined) this.room.leave(id);
       this.remote.delete(id);
       this.selves.delete(id);
@@ -424,7 +449,7 @@ export class CloudConnection {
     const er = [];
     for (const [peer, v] of this.er) er.push([peer, v[0], v[1]]);
     const pr = {
-      h: 1, v: 1, code: this.code, pm,
+      h: 1, v: 1, code: this.code, pm, pz: this.hidden ? 1 : 0,
       lb: inMatch ? null : this.lb,
       ss: inMatch ? this.ss : null,
       ro: inMatch || ended ? this.ro : null,
@@ -471,11 +496,12 @@ export class CloudConnection {
     this.code = code;
     this.interpDelay = 0.16;
     this.team = team === 1 ? 1 : 0;
-    this.tqN = 0;
-    this.inArr = [0, 0, 0, 0, 0, 0, 0, 0];
-    this.emN = 0;
-    this.emIdx = 0;
+    this.tqN++; // así el anfitrión aplica el equipo pedido aunque recuerde un pedido anterior
+    this.inArr = [0, 0, 0, 0, 0, this.inArr[5], this.inArr[6], this.inArr[7]];
     this.sentAt = new Map();
+    this.waitSent = false;
+    this.hostPaused = false;
+    this.admitted = false;
     this.myPeer = null;
     this.hostPeer = null;
     this.hostGoneAt = 0;
@@ -498,7 +524,14 @@ export class CloudConnection {
         this.deliver({ t: 'error', msg: `No encontramos la sala ${code}. Revisa el código o crea una nueva.` });
         this.leaveGame();
       } else if (this.hostPeer && this.hostGoneAt && now - this.hostGoneAt > GRACE_MS) {
-        this.lost('El anfitrión cerró la sala');
+        this.lost('Se perdió la conexión con el anfitrión');
+      } else if (this.hostPeer && !this.admitted) {
+        // el anfitrión existe pero no nos agrega: probablemente tiene el juego en segundo plano
+        if (!this.waitSent && now - joinedAt > 1500) { this.waitSent = true; this.deliver({ t: 'waiting', code }); }
+        if (now - joinedAt > ADMIT_TIMEOUT) {
+          this.deliver({ t: 'error', msg: `La sala ${code} no responde. El anfitrión debe tener el juego abierto en pantalla.` });
+          this.leaveGame();
+        }
       }
     }, 500);
     this.lobbyPresence({ g: null });
@@ -510,7 +543,7 @@ export class CloudConnection {
     this.named.presence({
       c: 1, v: 1, nm: this.profile.name, lv: this.profile.level || 1,
       sk: [sk.hat || 'none', sk.eyes === 1 ? 1 : 2, sk.fur | 0],
-      tm: this.team, tq: [this.tqN, this.team], in: [...this.inArr], em: [this.emN, this.emIdx | 0],
+      tm: this.team, tq: [this.tqN, this.team], in: [...this.inArr], em: [this.emN, this.emIdx | 0], x: null,
     }).catch((e) => this.fatal(e));
   }
 
@@ -565,6 +598,12 @@ export class CloudConnection {
   }
 
   consumeHost(pr) {
+    if (pr.x === 1) { this.lost('El anfitrión cerró la sala'); return; }
+    const paused = pr.pz === 1;
+    if (paused !== this.hostPaused) {
+      this.hostPaused = paused;
+      if (this.started) this.deliver({ t: 'hostpaused', on: paused });
+    }
     const pmE = entry(pr.pm, this.myPeer);
     const pid = pmE ? pmE[1] : undefined;
     const erE = entry(pr.er, this.myPeer);
@@ -574,6 +613,7 @@ export class CloudConnection {
       if (pid === undefined) { this.leaveGame(); return; }
     }
     if (pid === undefined) return; // el anfitrión aún no nos agrega
+    this.admitted = true;
     if (pr.lb && pr.lb.n !== this.got.lb) {
       this.got.lb = pr.lb.n;
       this.deliver(unpackLobby(pr.lb.d, pid));
@@ -583,16 +623,14 @@ export class CloudConnection {
       this.roster = pr.ro.r.map(unpackPlayer);
       if (this.started) this.deliver({ t: 'roster', roster: clone(this.roster) });
     }
-    if (pr.ss && this.roster.length && (pr.ss.n !== this.got.ss || (this.started && pid !== this.startPid))) {
+    if (pr.ss && this.roster.length && (pr.ss.n !== this.got.ss || !this.started || pid !== this.startPid)) {
+      // partida nueva (aunque nos perdiéramos el final), o el anfitrión nos reasignó otro personaje
       this.got.ss = pr.ss.n;
-      // partida nueva, o el anfitrión nos reasignó otro personaje: (re)iniciar la vista
-      if (!this.started || pid !== this.startPid) {
-        this.started = true;
-        this.startPid = pid;
-        this.stTm = -1;
-        this.lastEv = Array.isArray(pr.ev) && pr.ev.length ? pr.ev[pr.ev.length - 1][0] : -1;
-        this.deliver({ t: 'start', you: pid, roster: clone(this.roster), settings: clone(pr.ss.se), code: this.code });
-      }
+      this.started = true;
+      this.startPid = pid;
+      this.stTm = -1;
+      this.lastEv = Array.isArray(pr.ev) && pr.ev.length ? pr.ev[pr.ev.length - 1][0] : -1;
+      this.deliver({ t: 'start', you: pid, roster: clone(this.roster), settings: clone(pr.ss.se), code: this.code, match: `${this.code}:${pr.ss.n}` });
     }
     if (this.started && pr.st && pr.st.tm !== this.stTm) {
       this.stTm = pr.st.tm;
@@ -641,7 +679,13 @@ export class CloudConnection {
     for (const u of this.gameUnsubs) { try { u(); } catch { /* */ } }
     this.gameUnsubs = [];
     if (this.named) {
-      const p = this.named.leave().catch(() => {});
+      const named = this.named;
+      // salida intencional: el anfitrión avisa "sala cerrada" y el invitado "me voy", para que
+      // nadie espere el margen de reconexión (la presence se agrupa: se deja un instante antes de salir)
+      const signal = this.mode === 'host' ? { x: 1, st: null, ss: null, me: null, ev: null }
+        : this.mode === 'client' ? { x: 1, in: null } : null;
+      const p = (signal ? named.presence(signal).catch(() => {}).then(() => sleep(600)) : Promise.resolve())
+        .then(() => named.leave()).catch(() => {});
       this.leaving = p;
       p.then(() => { if (this.leaving === p) this.leaving = null; });
     }

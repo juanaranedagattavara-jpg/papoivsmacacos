@@ -80,6 +80,7 @@
       <button class="btn" id="btnJoin">Unirse</button>
     </div>
     <button class="btn" id="btnQuick">⚡ Partida rápida pública</button>
+    <div id="joinWait" class="join-wait hidden"><span id="joinWaitTxt"></span><button class="btn small" id="joinCancel">Cancelar</button></div>
     <div id="roomList" class="room-list hidden"></div>
     <p class="hint small" id="onlineNote"></p>
   </div>
@@ -225,6 +226,7 @@
     <button id="btnAttack" class="act attack" aria-label="Atacar"><span class="ico" id="atkIco">❄️</span><span class="cd" id="atkCd"></span></button>
   </div>
   <div id="countdown"></div>
+  <div id="waitbox" class="hidden"></div>
   <div id="jailbox" class="hidden"><b>¡Te atraparon!</b><span id="jailTxt"></span><button class="btn small" id="btnHelp">📣 ¡Libérenme!</button></div>
   <div id="emoteWheel" class="hidden"></div>
   <div id="pauseMenu" class="hidden">
@@ -239,6 +241,7 @@
 
 <div id="rotate" class="hidden"><div>📱↻</div><p>Gira tu celular para jugar mejor</p><button class="btn small" id="rotateOk">Jugar así</button></div>
 <div id="toast"></div>
+<div id="copyBox" class="hidden"><p>Copia este texto y pégalo en WhatsApp:</p><textarea id="copyText" readonly rows="3"></textarea><button class="btn small" id="copyClose">Listo</button></div>
 
 <script type="module" src="game.js"></script>
 </body>

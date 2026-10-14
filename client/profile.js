@@ -45,7 +45,13 @@ export function loadProfile() {
 }
 
 export function saveProfile(p) {
-  try { localStorage.setItem(KEY, JSON.stringify(p)); } catch { /* modo privado */ }
+  try {
+    const json = JSON.stringify(p);
+    localStorage.setItem(KEY, json);
+    return localStorage.getItem(KEY) === json;
+  } catch {
+    return false; // modo privado o almacenamiento bloqueado
+  }
 }
 
 function guessQuality() {

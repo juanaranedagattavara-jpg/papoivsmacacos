@@ -43,6 +43,12 @@ function sset(k, v, session = false) { try { (session ? sessionStorage : localSt
 
 // ------------------------------------------------------------ utilidades UI
 function show(id) {
+  // salir de "Jugar con amigos" o del lobby hacia el menú cancela la sala pendiente
+  if (['online', 'lobby'].includes(current) && !['online', 'lobby', 'results', 'game'].includes(id) && conn && (conn.busy || conn.mode)) {
+    conn.send({ t: 'leave' });
+    lobby = null;
+  }
+  if (id !== 'online') hideJoinWait();
   current = id;
   for (const el of document.querySelectorAll('.screen')) el.classList.toggle('show', el.id === id);
   if (id === 'menu') refreshMenu();
@@ -51,6 +57,25 @@ function show(id) {
   if (id === 'bots') refreshBots();
   if (id === 'online') refreshOnline();
   if (['menu', 'custom', 'settings', 'bots', 'online', 'howto', 'lobby', 'results'].includes(id)) startMenuLoop();
+}
+
+function hideToast() {
+  clearTimeout(toastTimer);
+  $('toast').className = '';
+}
+
+function showJoinWait(code) {
+  $('joinWaitTxt').textContent = `Entrando a la sala ${code}… el anfitrión debe tener el juego abierto en pantalla.`;
+  $('joinWait').classList.remove('hidden');
+}
+function hideJoinWait() { $('joinWait')?.classList.add('hidden'); }
+
+function showCopyBox(text) {
+  const t = $('copyText');
+  t.value = text;
+  $('copyBox').classList.remove('hidden');
+  t.focus();
+  t.select();
 }
 
 let toastTimer = null;
@@ -208,8 +233,14 @@ function refreshSettings() {
     const v = k === 'quality' ? profile.prefs.quality : profile.prefs[k] ? 1 : 0;
     bindSeg(seg, v, (val) => {
       if (k === 'quality') {
+        const prev = profile.prefs.quality;
         profile.prefs.quality = +val;
-        saveProfile(profile);
+        if (!saveProfile(profile)) {
+          profile.prefs.quality = prev;
+          refreshSettings();
+          toast('Esta vista no permite guardar ajustes: la calidad no se puede cambiar aquí', true);
+          return;
+        }
         toast('Aplicando calidad…');
         setTimeout(() => location.reload(), 400);
         return;
@@ -419,10 +450,11 @@ async function share(text, url) {
     } catch { return; }
   }
   try {
+    if (!navigator.clipboard) throw new Error('sin portapapeles');
     await navigator.clipboard.writeText(full);
-    toast(CLOUD ? '¡Copiado! Pégalo en WhatsApp junto al link de la página' : '¡Link copiado! Pégalo en WhatsApp');
+    toast(CLOUD ? '¡Copiado! Pégalo en WhatsApp junto al link de esta página en Claude' : '¡Link copiado! Pégalo en WhatsApp');
   } catch {
-    toast(full);
+    showCopyBox(full); // respaldo: texto seleccionable para copiar a mano
   }
 }
 
@@ -438,14 +470,25 @@ function dispatch(m, source) {
       lobby = m;
       if (current === 'online' || current === 'lobby' || (current === 'menu' && pendingJoin)) {
         pendingJoin = null;
+        hideJoinWait();
+        hideToast();
         if (current !== 'lobby') show('lobby');
         renderLobby();
       }
       break;
     case 'start':
+      hideJoinWait();
+      if (game && game.running && game.conn === local && source !== local) {
+        source.send({ t: 'leave' }); // partida online que llegó tarde: no reemplazar la de bots
+        return;
+      }
       startGame(m, source);
       break;
+    case 'waiting':
+      if (current === 'online') showJoinWait(m.code);
+      break;
     case 'error':
+      hideJoinWait();
       if (!(game && game.running)) toast(m.msg, true);
       break;
     default:
@@ -456,7 +499,7 @@ function dispatch(m, source) {
 function startGame(start, source) {
   if (game && game.running) {
     // mismo personaje en la misma conexión: es un aviso repetido; si cambió, rehacer la vista
-    if (game.conn === source && start.you === game.meId) return;
+    if (game.conn === source && start.you === game.meId && start.match === game.match && !game.ended) return;
     game.destroy();
   }
   stopMenuLoop();
@@ -535,7 +578,8 @@ function onGameEnd(results, meId, team, source) {
     const txt = xp.won
       ? `¡Gané ${results.score[team]}-${results.score[1 - team]} con los ${TEAMS[team].name} en Papois vs Macacos! ${me?.stats.caps ? `Hice ${me.stats.caps} capturas 🚩.` : ''} ¿Te atreves?`
       : `Jugué Papois vs Macacos con los ${TEAMS[team].name}. ¡Ven a jugar conmigo!`;
-    const url = !lastResults.local && lobby ? inviteLink() : location.origin + location.pathname;
+    // en la nube, la URL del marco no sirve: el amigo necesita el link de la página en Claude
+    const url = CLOUD ? '' : (!lastResults.local && lobby ? inviteLink() : location.origin + location.pathname);
     share(txt, url);
   };
 }
@@ -593,6 +637,8 @@ function bindUi() {
     show('menu');
   };
   $('btnFullscreen').onclick = () => fullscreen();
+  $('joinCancel').onclick = () => { sound.play('click'); hideJoinWait(); conn?.send({ t: 'leave' }); refreshOnline(); };
+  $('copyClose').onclick = () => $('copyBox').classList.add('hidden');
   $('rotateOk').onclick = () => { $('rotate').classList.add('hidden'); sset('pvm_rot', '1', true); };
   window.addEventListener('resize', () => {
     world?.resize();

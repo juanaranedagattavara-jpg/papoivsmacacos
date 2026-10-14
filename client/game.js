@@ -56,6 +56,7 @@ export class Game {
     this.toast = toast;
     this.settings = start.settings;
     this.code = start.code;
+    this.match = start.match;
     this.meId = start.you;
     this.roster = new Map(start.roster.map((r) => [r.id, r]));
     this.team = this.roster.get(this.meId)?.team ?? 0;
@@ -144,7 +145,11 @@ export class Game {
     };
     this.onPause = () => {
       this.paused = this.conn.isLocal;
-      $('pauseInfo').textContent = this.conn.isLocal ? 'Partida contra bots (en pausa)' : `Sala ${this.code} · la partida sigue corriendo`;
+      $('pauseInfo').textContent = this.conn.isLocal
+        ? 'Partida contra bots (en pausa)'
+        : this.conn.mode === 'host'
+          ? `Sala ${this.code} · eres el anfitrión: la partida sigue corriendo y, si sales, la sala se cierra para todos`
+          : `Sala ${this.code} · la partida sigue corriendo`;
       this.ui.pause.classList.remove('hidden');
       this.conn.setPaused(true);
       this.input.reset();
@@ -194,12 +199,14 @@ export class Game {
         this.hud.syncLabels(this.roster, this.meId);
         break;
       case 'end': this.finish(m.results); break;
+      case 'hostpaused': this.hostPaused = !!m.on; break;
       case 'error': this.toast(m.msg, true); break;
       default: break;
     }
   }
 
   onSnapshot(m) {
+    this.lastSnapWall = performance.now();
     const now = performance.now() / 1000;
     const sample = m.tm - now;
     if (this.clock === null) this.clock = sample;
@@ -371,7 +378,15 @@ export class Game {
     const dt = Math.min(0.1, Math.max(0, (tms - this.last) / 1000));
     this.last = tms;
     this.time += dt;
-    if (!this.ended && this.latest && !this.paused) {
+    // en línea: si el anfitrión deja de mandar estado, no predecir en un mundo congelado
+    const stall = !this.conn.isLocal && this.latest ? performance.now() - (this.lastSnapWall || 0) : 0;
+    const stalled = stall > 400 || this.hostPaused;
+    if (!this.ended) {
+      this.hud.waiting(this.hostPaused ? 'El anfitrión salió de la pantalla. Esperando que vuelva…'
+        : stall > 1500 ? 'Esperando al anfitrión…' : null);
+    }
+    if (stalled) { this.acc = 0; this.input.sample(); }
+    if (!this.ended && this.latest && !this.paused && !stalled) {
       this.acc += dt;
       let n = 0;
       while (this.acc >= DT && n < 5) { this.fixedTick(); this.acc -= DT; n++; }
@@ -825,7 +840,7 @@ export class Game {
         const base = BASES[t].flag;
         fx.celebrate(base.x, base.y, t === PAPOIS ? [0xffc928, 0x2b5aa8, 0xffffff] : [0x3ddc84, 0x6b3d1e, 0xffe14a]);
         this.sound.play(mine ? 'capture' : 'enemyCapture');
-        this.hud.banner(mine ? '¡CAPTURA!' : `Captura de los ${TEAMS[t].name}`, `${this.roster.get(a)?.name || ''} anotó · ${c} - ${d}`, mine ? 't' + t : 'bad', 2400);
+        this.hud.banner(mine ? '¡CAPTURA!' : `Captura de los ${TEAMS[t].name}`, `${escapeHtml(this.roster.get(a)?.name || '')} anotó · ${c} - ${d}`, mine ? 't' + t : 'bad', 2400);
         this.hud.feed(`🏆 ${this.name(a)} capturó la bandera`);
         if (a === meId) { this.world.shake(0.7, 0.5); this.buzz([80, 40, 80, 40, 160]); }
         break;

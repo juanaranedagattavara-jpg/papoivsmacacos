@@ -14,7 +14,7 @@ export class Hud {
       countdown: $('countdown'), jailbox: $('jailbox'), jailTxt: $('jailTxt'), tip: $('tip'),
       ultRing: $('ultRing'), ultPct: $('ultPct'), btnUlt: $('btnUlt'), btnAttack: $('btnAttack'),
       btnAbility: $('btnAbility'), atkCd: $('atkCd'), abiCd: $('abiCd'), atkIco: $('atkIco'), abiIco: $('abiIco'),
-      minimap: $('minimap'), ping: $('ping'), emoteWheel: $('emoteWheel'),
+      minimap: $('minimap'), ping: $('ping'), emoteWheel: $('emoteWheel'), waitbox: $('waitbox'),
     };
     this.labels = new Map();
     this.floaters = [];
@@ -53,6 +53,7 @@ export class Hud {
     this.lastScore = [0, 0];
     this.cache = {};
     this.el.jailbox.classList.add('hidden');
+    this.el.waitbox.classList.add('hidden');
     this.el.vignette.className = '';
     this.el.frost.className = '';
   }
@@ -138,6 +139,12 @@ export class Hud {
     if (this.cache.cd === txt) return;
     this.cache.cd = txt;
     this.el.countdown.innerHTML = txt ? `<div><span>${txt}</span><small>¡Prepárate!</small></div>` : '';
+  }
+
+  waiting(text) {
+    const on = !!text;
+    this.el.waitbox.classList.toggle('hidden', !on);
+    if (on) this.setText('wait', this.el.waitbox, text);
   }
 
   jail(on, secs) {
